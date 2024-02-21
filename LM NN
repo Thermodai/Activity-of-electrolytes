@@ -1,0 +1,55 @@
+# The following code allows prediction of activity of water and activity of electrolytes of binary electrolyte solutions, using a Levenberg-Marquardt neural network
+# The input data is an excel file containing 8 columns (size, charge and stoichiometric coefficient of the ions, molal concentration and activity coefficient of water or activity coefficients of electrolytes at the given concentration)
+# This method does not guarantee reliable predictions.
+# Accuracy is better when the training data is close to the predicted values: predicting activity coefficients of lithium sulfate can be done by including data for other alkali sulfate electrolytes in the training dataset, best is to include known values for electrolytes.
+# Activity values must be located in the "Activity" column, predicted values are the ones which are missing in the "Activity" column
+
+
+import pyrenn
+import pandas as pd
+import numpy as np
+from sklearn.preprocessing import MinMaxScaler
+
+# Load the data, change the file path to the desired excel file
+file_path = "your file path goes here"
+df = pd.read_excel(file_path)
+
+# Separate the dataset into training (non-missing "Activity" values) and prediction (missing "Activity" values)
+train_df = df.dropna(subset=["Activity"])
+predict_df = df[df["Activity"].isna()]
+
+# Extract features and target from training data
+X_train = train_df.drop(columns=["Activity"])
+y_train = train_df["Activity"]
+
+# Scale the data to range [-1, 1]
+scaler_X = MinMaxScaler(feature_range=(-1, 1))
+X_train_scaled = scaler_X.fit_transform(X_train)
+
+scaler_y = MinMaxScaler(feature_range=(-1, 1))
+y_train_scaled = scaler_y.fit_transform(y_train.values.reshape(-1, 1)).flatten()
+
+# Define the neural network structure 
+input_neurons = 7 # Same as number of features, adjust as needed
+hidden_neurons = [128]  # Adjust as needed
+output_neurons = 1
+
+# Create the neural network
+nn = pyrenn.CreateNN([input_neurons] + hidden_neurons + [output_neurons])
+
+# Train the network using Levenberg-Marquardt
+nn = pyrenn.train_LM(X_train_scaled.T, y_train_scaled.reshape(1, -1), nn, k_max=10, E_stop=0.5, verbose=True)
+
+# Scale features from the prediction dataset
+X_predict_scaled = scaler_X.transform(predict_df.drop(columns=["Activity"]))
+
+# Predict the missing "Activity" values
+predicted_activity_scaled = pyrenn.NNOut(X_predict_scaled.T, nn).flatten()
+
+# Inverse transform to get predictions back to original scale
+predicted_activity = scaler_y.inverse_transform(predicted_activity_scaled.reshape(-1, 1)).flatten()
+
+
+# Print predicted values
+predict_df.loc[:, "Activity"] = predicted_activity
+print(predict_df)
